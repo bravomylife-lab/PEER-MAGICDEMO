@@ -21,6 +21,9 @@
       "Bash(git commit:*)",
       "Bash(python -m http.server:*)",
       "Bash(copy:*)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\droli\\OneDrive\\문서\\GitHub\\PEER-MAGICDEMO"
     ]
   }
 }
