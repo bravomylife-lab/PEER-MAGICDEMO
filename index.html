@@ -260,15 +260,40 @@
       '이성혁': 'JGH',
     };
 
-    // 이메일에서 OP명 추출
+    // 이메일에서 OP명 추출 (확장됨 - 자동 추출 지원)
     const getOPFromEmail = (email) => {
       if (!email) return '';
       const emailLower = email.toLowerCase();
+
+      // 1. 기존 매핑 테이블에서 검색
       for (const [key, value] of Object.entries(EMAIL_TO_OP)) {
         if (emailLower.includes(key.toLowerCase().split('@')[0])) {
           return value;
         }
       }
+
+      // 2. 이메일 로컬파트에서 자동 추출
+      // 예: audiofreaksmusic@gmail.com → audiofreak
+      const atIndex = email.indexOf('@');
+      if (atIndex > 0) {
+        let localPart = email.substring(0, atIndex);
+
+        // "music", "publishing", "records" 등의 접미사 제거
+        localPart = localPart
+          .replace(/music$/i, '')
+          .replace(/publishing$/i, '')
+          .replace(/records$/i, '')
+          .replace(/productions?$/i, '')
+          .replace(/entertainment$/i, '')
+          .replace(/media$/i, '')
+          .replace(/s$/i, ''); // 복수형 s 제거
+
+        // 첫 글자 대문자로 변환
+        if (localPart.length > 0) {
+          return localPart.charAt(0).toUpperCase() + localPart.slice(1);
+        }
+      }
+
       return '';
     };
 
@@ -427,7 +452,18 @@
       const composerHint = extractComposerHintFromPath(folderPath);
       const folderOP = extractOPFromFolderPath(folderPath);
 
-      // 대괄호에서 저작자 추출
+      // ========== 우선 패턴: 작곡가,작곡가 [곡명] 형식 ==========
+      // 예: KRXB,YEON [Heart reaction] DEMO_jty9142@gmail.com.mp3
+      const composersBracketPattern = /^([A-Z]+(?:,[A-Z]+)*)\s*\[([^\]]+)\]/i;
+      const composersBracketMatch = nameWithoutExt.match(composersBracketPattern);
+      if (composersBracketMatch) {
+        composer = composersBracketMatch[1].replace(/,/g, ', ').trim();
+        songName = composersBracketMatch[2].trim();
+        opName = getOPFromEmail(email) || getOPFromComposer(composer) || folderOP || '';
+        return { songName, composer, opName, email, genre, bpm };
+      }
+
+      // 대괄호에서 저작자 추출 (기존 로직)
       const bracketComposers = extractComposersFromBrackets(nameWithoutExt);
 
       // 파일명에서 이메일과 대괄호 제거한 버전
@@ -860,7 +896,7 @@ writers CC, Ron, JJ
       );
     });
 
-    // 크레딧 텍스트 파싱 (확장됨 - Metadata, Composer 형식 지원)
+    // 크레딧 텍스트 파싱 (확장됨 - Track Title, WRITERS DETAILS 지원)
     const parseCreditText = (creditText) => {
       const credits = {};
       const lines = creditText.split('\n').map(l => l.trim()).filter(l => l);
@@ -871,8 +907,32 @@ writers CC, Ron, JJ
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
 
-        // 섹션 헤더 스킵 (타이틀, 수록성, Metadata 등)
-        if (/^(타이틀|수록성|수록곡|\(타이틀\)|\(수록성\)|Metadata|##?\s)/i.test(line)) {
+        // 섹션 헤더 스킵 (타이틀, 수록성, Metadata, Link, WRITERS DETAILS 등)
+        if (/^(타이틀|수록성|수록곡|\(타이틀\)|\(수록성\)|Metadata|Link:|WRITERS DETAILS:|##?\s)/i.test(line)) {
+          continue;
+        }
+
+        // 패턴 0: Track Title: 곡명
+        const trackTitleMatch = line.match(/^Track Title:\s*(.+)$/i);
+        if (trackTitleMatch) {
+          // 이전 곡 저장
+          if (currentSong && currentCredits.length > 0) {
+            credits[currentSong.toLowerCase()] = currentCredits.join(', ');
+          }
+          currentSong = trackTitleMatch[1].trim();
+          currentCredits = [];
+          continue;
+        }
+
+        // 패턴 0-1: WRITERS DETAILS 섹션 내 작가 정보
+        // 예: [33.33%]  Scott Russell Stoddart (CAE: 679119701)
+        const writerDetailsMatch = line.match(/^\[[\d.]+%\]\s+([^(]+)(?:\(CAE:[^)]*\))?\s*(.*)$/);
+        if (writerDetailsMatch && currentSong) {
+          const writerName = writerDetailsMatch[1].trim();
+          // CAE 번호와 퍼블리셔 정보 제거하고 작가명만 추출
+          if (writerName && !currentCredits.includes(writerName)) {
+            currentCredits.push(writerName);
+          }
           continue;
         }
 
