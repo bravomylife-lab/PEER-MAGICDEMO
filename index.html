@@ -725,8 +725,8 @@
         composer = bracketComposers;
       }
 
-      // OP명 결정
-      opName = getOPFromEmail(email) || getOPFromComposer(composer) || folderOP || '';
+      // OP명 결정 (한국 작곡가 이니셜 최우선)
+      opName = getOPFromComposer(composer) || getOPFromEmail(email) || folderOP || '';
 
       // 이메일에서 기본 저작자 매핑 (저작자가 비어있을 때)
       if (!composer && email && EMAIL_TO_COMPOSER[email]) {
@@ -1075,15 +1075,19 @@ writers CC, Ron, JJ
         // 예1: MC_03882_Breeze: 138BPM_Bbkey_가이드보컬 AI활용_김도경(DØK)
         // 예2: MC_03708_Cocococo_Soft ver.
         //      참여 작가 : 작사: Kyle, Itzel 작곡: Elliot, Itzel 편곡: Kyle, Elliot
+        // 예3: MC_03912_Glitch
+        //      130BPM_Gkey_가이드보컬 AI활용_김도경(DØK)
         const mcCreditMatch = line.match(/^MC_\d+_([^:_]+)(?:_[^:]*)?(?::\s*(.+))?$/i);
         if (mcCreditMatch) {
-          const songName = mcCreditMatch[1].trim(); // Breeze, Cocococo
+          const songName = mcCreditMatch[1].trim(); // Breeze, Cocococo, Glitch
           let composerInfo = mcCreditMatch[2] || '';
 
-          // 다음 줄에 "참여 작가" 정보가 있을 수 있음
-          if (i + 1 < lines.length && /참여 작가|작사|작곡|편곡/i.test(lines[i + 1])) {
+          // 다음 줄에 추가 정보가 있을 수 있음 (작사/작곡/편곡 또는 BPM/키 정보)
+          if (i + 1 < lines.length && !/^MC_|\d+\.|^Track Title:/i.test(lines[i + 1])) {
             i++; // 다음 줄로 이동
-            composerInfo = lines[i];
+            const nextLine = lines[i];
+            // 참여 작가가 명시된 경우 또는 BPM/키 정보인 경우 모두 처리
+            composerInfo += (composerInfo ? ' ' : '') + nextLine;
           }
 
           if (composerInfo) {
@@ -1093,11 +1097,13 @@ writers CC, Ron, JJ
             // 작사: Kyle, Itzel / 작곡: Elliot, Itzel / 편곡: Kyle, Elliot 파싱
             const creditSections = composerInfo.split(/작사|작곡|편곡|lyricist|composer|arranger/i);
             creditSections.forEach(section => {
-              const names = section.match(/[A-Z][a-z]+|[가-힣]+\([^)]+\)|[가-힣]{2,4}/g);
+              // 김도경(DØK) 또는 영문 이름 또는 한글 이름 추출
+              const names = section.match(/[가-힣]+\([^)]+\)|[A-Z][a-z]+|[가-힣]{2,4}/g);
               if (names) {
                 names.forEach(name => {
                   const cleaned = name.replace(/[:：,\s]+$/, '').trim();
-                  if (cleaned && cleaned !== '참여' && cleaned !== '작가') {
+                  if (cleaned && cleaned !== '참여' && cleaned !== '작가' &&
+                      !/^\d+BPM|^[A-G][#b]?key|가이드보컬|AI활용/i.test(cleaned)) {
                     allComposers.add(cleaned);
                   }
                 });
@@ -1114,14 +1120,17 @@ writers CC, Ron, JJ
         // 패턴 0: Track Title: 곡명
         const trackTitleMatch = line.match(/^Track Title:\s*(.+)$/i);
         if (trackTitleMatch) {
-          // 이전 곡 저장 (중복 제거)
+          // 이전 곡 저장 (단어 단위 중복 제거)
           if (currentSong && currentCredits.length > 0) {
-            const uniqueCredits = [...new Set(
-              currentCredits.flatMap(c =>
-                c.split(/[,/]/).map(name => name.trim())
-              )
-            )];
-            credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
+            const allWords = new Set();
+            currentCredits.forEach(c => {
+              c.split(/[,/]/).forEach(name => {
+                name.trim().split(/\s+/).forEach(word => {
+                  if (word) allWords.add(word);
+                });
+              });
+            });
+            credits[currentSong.toLowerCase()] = [...allWords].join(' ');
           }
           currentSong = trackTitleMatch[1].trim();
           currentCredits = [];
@@ -1153,14 +1162,17 @@ writers CC, Ron, JJ
         // 패턴 2: "곡명.mp3 | Powered by Box" 형식 (Box에서 복사한 형식)
         const boxMatch = line.match(/^(.+?)\.(mp3|wav|m4a|flac|aiff)\s*\|\s*Powered by Box$/i);
         if (boxMatch) {
-          // 이전 곡 저장 (중복 제거)
+          // 이전 곡 저장 (단어 단위 중복 제거)
           if (currentSong && currentCredits.length > 0) {
-            const uniqueCredits = [...new Set(
-              currentCredits.flatMap(c =>
-                c.split(/[,/]/).map(name => name.trim())
-              )
-            )];
-            credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
+            const allWords = new Set();
+            currentCredits.forEach(c => {
+              c.split(/[,/]/).forEach(name => {
+                name.trim().split(/\s+/).forEach(word => {
+                  if (word) allWords.add(word);
+                });
+              });
+            });
+            credits[currentSong.toLowerCase()] = [...allWords].join(' ');
           }
           currentSong = boxMatch[1].trim();
           currentCredits = [];
@@ -1207,30 +1219,66 @@ writers CC, Ron, JJ
             currentCredits.push(creditInfo);
           }
         } else if (!isKoreanCredit && !hasPercentage && !hasPeermusic && line.length > 0 && !/^Composer/i.test(line)) {
-          // 새로운 곡명으로 인식 (기존 형식)
-          // 이전 곡 저장 (중복 제거)
+          // 파일명 형식 감지 (이국현,이동영,김민규_Summer, Some_BPM80_email.mp3)
+          const isFilenameFormat = /\.(mp3|wav|m4a|flac|aiff)$/i.test(line) ||
+                                   (/_/.test(line) && /@/.test(line)) ||
+                                   (/_/.test(line) && /BPM\d+/i.test(line));
+
+          // 이전 곡 저장 (단어 단위 중복 제거)
           if (currentSong && currentCredits.length > 0) {
-            const uniqueCredits = [...new Set(
-              currentCredits.flatMap(c =>
-                c.split(/[,/]/).map(name => name.trim())
-              )
-            )];
-            credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
+            const allWords = new Set();
+            currentCredits.forEach(c => {
+              c.split(/[,/]/).forEach(name => {
+                name.trim().split(/\s+/).forEach(word => {
+                  if (word) allWords.add(word);
+                });
+              });
+            });
+            credits[currentSong.toLowerCase()] = [...allWords].join(' ');
           }
-          currentSong = line;
-          currentCredits = [];
+
+          if (isFilenameFormat) {
+            // 파일명에서 작곡가_곡명 파싱
+            const cleanLine = line.replace(/\.(mp3|wav|m4a|flac|aiff)$/i, '').replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi, '');
+            const parts = cleanLine.split('_').filter(p => p.trim());
+
+            if (parts.length >= 2) {
+              const firstPart = parts[0].trim();
+              // 쉼표로 구분된 여러 이름 또는 한글 2-4자 → 작곡가
+              const hasMultipleComposers = /[,\-]/.test(firstPart) && firstPart.split(/[,\-]/).length >= 2;
+              const isSingleKoreanName = /^[가-힣]{2,4}$/.test(firstPart);
+
+              if (hasMultipleComposers || isSingleKoreanName) {
+                currentSong = parts[1].trim(); // 곡명
+                currentCredits = [firstPart.replace(/[,\-]/g, ' ')]; // 작곡가들
+              } else {
+                currentSong = line;
+                currentCredits = [];
+              }
+            } else {
+              currentSong = line;
+              currentCredits = [];
+            }
+          } else {
+            // 일반 곡명
+            currentSong = line;
+            currentCredits = [];
+          }
         }
       }
 
-      // 마지막 곡 저장 (중복 제거)
+      // 마지막 곡 저장 (단어 단위 중복 제거)
       if (currentSong && currentCredits.length > 0) {
-        // 작곡가 이름 중복 제거 (Smob, Mint, Perrie, Smob → Smob, Mint, Perrie)
-        const uniqueCredits = [...new Set(
-          currentCredits.flatMap(c =>
-            c.split(/[,/]/).map(name => name.trim())
-          )
-        )];
-        credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
+        // 단어 단위로 split하여 중복 제거 (여인혜 ChoiS CHAIRMAN → 한 번만)
+        const allWords = new Set();
+        currentCredits.forEach(c => {
+          c.split(/[,/]/).forEach(name => {
+            name.trim().split(/\s+/).forEach(word => {
+              if (word) allWords.add(word);
+            });
+          });
+        });
+        credits[currentSong.toLowerCase()] = [...allWords].join(' ');
       }
 
       return credits;
