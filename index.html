@@ -255,10 +255,10 @@
       'sg': 'SoundGraphics',
       // Concord
       'concord': 'Concord',
-      // 추가 한국 작곡가
-      '손연성': 'Individual',
-      '주현민': 'Individual',
-      '박수석': 'Individual',
+      // 추가 한국 작곡가 (이니셜 기반 OP명)
+      '손연성': 'SON',
+      '주현민': 'JHM',
+      '박수석': 'PSS',
       '이성혁': 'JGH',
       '배새롬': 'BSR',
     };
@@ -300,15 +300,25 @@
       return '';
     };
 
-    // 저작자명에서 OP명 추출
+    // 저작자명에서 OP명 추출 (한국 작곡가 자동 이니셜 지원)
     const getOPFromComposer = (composer) => {
       if (!composer) return '';
       const composerLower = composer.toLowerCase();
+
+      // 1. 매핑 테이블에서 검색
       for (const [key, value] of Object.entries(COMPOSER_TO_OP)) {
         if (composerLower.includes(key.toLowerCase())) {
           return value;
         }
       }
+
+      // 2. 한국 작곡가 자동 이니셜 추출 (한글 2-4자)
+      // 쉼표로 구분된 첫 번째 작곡가만 사용
+      const firstComposer = composer.split(/[,/]/)[0].trim();
+      if (/^[가-힣]{2,4}$/.test(firstComposer)) {
+        return getKoreanInitials(firstComposer);
+      }
+
       return '';
     };
 
