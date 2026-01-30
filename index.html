@@ -122,10 +122,10 @@
 
     // 장르 프리셋 목록
     const GENRE_PRESETS = [
-      'Pop', 'K-Pop', 'Ballad', 'K-Ballad', 'R&B', 'Hip-Hop', 'Rock',
+      'Pop', 'K-Pop', 'Acoustic', 'Ballad', 'K-Ballad', 'R&B', 'Hip-Hop', 'Rock',
       'Dance', 'EDM', 'Electronic', 'House', 'Trap',
       'Jazz', 'Soul', 'Funk', 'Disco', 'Reggae', 'Country',
-      'Folk', 'Acoustic', 'Alternative', 'Indie',
+      'Folk', 'Alternative', 'Indie', 'Easy Listening',
       'City Pop', 'Synth Pop', 'Future Bass', 'Dubstep',
       'Chill', 'Afrobeat', 'Latin', 'Reggaeton',
       'Urban', 'Retro', 'Hyper', 'Mixx Pop', 'Garage', '2Step', 'OST',
@@ -148,6 +148,7 @@
       // 복합 장르
       'Medium Pop', 'Soft Pop', 'Hard Rock', 'Soft Rock', 'Deep House',
       'Tech House', 'Tropical House', 'Melodic House', 'Bass House',
+      'Easy Listening',
       // 한글 장르
       '팝', '발라드', '힙합', '알앤비', '댄스', '재즈', '소울', '펑크', '디스코',
       '록', '블루스', '컨트리', '포크', '클래식', '라틴', '트랩', '일렉트로닉',
@@ -213,10 +214,12 @@
       'jaadde@naver.com': 'JADE',
       'sae170@naver.com': 'BSR',
       'eogh8282@naver.com': 'JDH',
+      'mbarocci@peermusic.com': 'PM.ITALY',
     };
 
     // 이메일 → 저작자 매핑 (자동 저작자 입력용)
     const EMAIL_TO_COMPOSER = {
+      'ahlgus2696@naver.com': '박현규',
       'purpl78@hanmail.net': '김원',
       'molesmusik@yahoo.es': 'Jose Manuel',
       'zzix1234@naver.com': 'KZ',
@@ -246,6 +249,7 @@
       '박민우': 'YJH',
       '박현규': 'PHK',
       'phk': 'PHK',
+      '박상민': 'PSM',
       '오영빈': 'OYB',
       'noheul': 'Noheul',
       '노을': 'Noheul',
@@ -773,6 +777,19 @@
         if (/eniac/i.test(composer) || /eniac/i.test(nameWithoutExt)) {
           email = '대표님 전달 DEMO';
         }
+        return { songName, composer, opName, email, genre, bpm };
+      }
+
+      // ========== 패턴 0-10-2-1: 작가명_BPM_곡명 Sketch_장르 형식 ==========
+      // 예: 박상민_95BPM_Glow Sketch_POP.mp3
+      const sketchPattern = /^([가-힣]{2,4})_(\d+)BPM_(.+?)\s+Sketch_([A-Za-z]+)$/i;
+      const sketchMatch = nameWithoutExt.match(sketchPattern);
+      if (sketchMatch) {
+        composer = sketchMatch[1].trim();
+        bpm = sketchMatch[2];
+        songName = sketchMatch[3].trim(); // "Glow" (Sketch는 무시)
+        genre = sketchMatch[4].trim(); // "POP"
+        opName = getOPFromComposer(composer) || getOPFromEmail(email) || folderOP || '';
         return { songName, composer, opName, email, genre, bpm };
       }
 
@@ -1488,7 +1505,34 @@ writers CC, Ron, JJ
           if (creditInfo) {
             currentCredits.push(creditInfo);
           }
-        } else if (!isKoreanCredit && !hasPercentage && !hasPeermusic && line.length > 0 && !/^Composer/i.test(line)) {
+          continue;
+        }
+
+        // ========== 패턴 8: 이름 (괄호 정보) 형식 ==========
+        // 예: "Elsa Søllesvik (Peermusic Artist Rights)"
+        // 예: "Fabio Pizzoli (Peermusic Italy, Visionary Sapiens)"
+        const nameWithParenthesesMatch = line.match(/^([A-ZÅ-Öa-zå-ö\s]+)\s*\(([^)]+)\)$/);
+        if (nameWithParenthesesMatch && currentSong) {
+          const name = nameWithParenthesesMatch[1].trim();
+          const info = nameWithParenthesesMatch[2].trim();
+          currentCredits.push(`${name} (${info})`);
+          continue;
+        }
+
+        // ========== 패턴 9: 단순 이름 형식 ==========
+        // 예: "Lasse Nymann", "Simon Janlov"
+        // 조건: 현재 곡이 있고, 2-4개 단어로 구성되고, 각 단어가 대문자로 시작
+        const simpleNameMatch = line.match(/^([A-ZÅ-Ö][a-zå-ö]+(?:\s[A-ZÅ-Ö][a-zå-ö]+){0,3})$/);
+        if (simpleNameMatch && currentSong) {
+          const name = simpleNameMatch[1].trim();
+          // 파일 형식이 아니고, 일반 이름 형식이면 크레딧으로 추가
+          if (!/\.(mp3|wav|m4a|flac|aiff)$/i.test(line) && !/@/.test(line) && !/BPM\d+/i.test(line)) {
+            currentCredits.push(name);
+            continue;
+          }
+        }
+
+        if (!isKoreanCredit && !hasPercentage && !hasPeermusic && line.length > 0 && !/^Composer/i.test(line)) {
           // 파일명 형식 감지 (이국현,이동영,김민규_Summer, Some_BPM80_email.mp3)
           const isFilenameFormat = /\.(mp3|wav|m4a|flac|aiff)$/i.test(line) ||
                                    (/_/.test(line) && /@/.test(line)) ||
