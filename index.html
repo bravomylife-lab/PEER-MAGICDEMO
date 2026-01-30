@@ -542,7 +542,7 @@
       const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi;
       const allEmails = nameWithoutExt.match(emailRegex) || [];
       const rawEmail = allEmails[0] || extractEmailFromPath(folderPath);
-      const email = cleanEmailAddress(rawEmail) || '대표님 전달 DEMO'; // 이메일 없으면 기본값
+      let email = cleanEmailAddress(rawEmail) || '대표님 전달 DEMO'; // 이메일 없으면 기본값 (let으로 재할당 가능)
 
       const composerHint = extractComposerHintFromPath(folderPath);
       const folderOP = extractOPFromFolderPath(folderPath);
