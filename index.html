@@ -528,20 +528,22 @@
       const composerHint = extractComposerHintFromPath(folderPath);
       const folderOP = extractOPFromFolderPath(folderPath);
 
-      // ========== 패턴 0-1: MC_번호_곡명: 작곡가 형식 (뮤직컴바인) ==========
+      // ========== 패턴 0-1: MC_번호_곡명 형식 (뮤직컴바인) ==========
       // 예: MC_03882_Breeze: 138BPM_Bbkey_가이드보컬 AI활용_김도경(DØK).mp3
-      const mcPattern = /^MC_\d+_([^:]+)(?::\s*(.+))?/i;
+      // 예: MC_03708_Cocococo_Intro_Soft.mp3
+      const mcPattern = /^MC_\d+_([^_:]+)(?:[_:](.+))?/i;
       const mcMatch = nameWithoutExt.match(mcPattern);
       if (mcMatch) {
-        songName = mcMatch[1].trim();
+        songName = mcMatch[1].trim(); // Breeze, Cocococo
         const restInfo = mcMatch[2] || '';
 
         // 콜론 뒤 정보에서 작곡가 추출 (괄호 안 영문명 포함)
-        // 예: 김도경(DØK), 성환(Azsuen), 이은석(Silverstone)
-        const composerMatches = restInfo.match(/([가-힣]+\([^)]+\))/g) ||
-                               restInfo.match(/([가-힣]{2,4})/g);
-        if (composerMatches && composerMatches.length > 0) {
-          composer = composerMatches.join(', ');
+        if (restInfo.includes(':') || /[가-힣]/.test(restInfo)) {
+          const composerMatches = restInfo.match(/([가-힣]+\([^)]+\))/g) ||
+                                 restInfo.match(/([가-힣]{2,4})/g);
+          if (composerMatches && composerMatches.length > 0) {
+            composer = composerMatches.join(', ');
+          }
         }
 
         opName = 'MC.B';
@@ -617,8 +619,7 @@
         .replace(/^_|_$/g, '')  // 앞뒤 언더스코어 제거
         .trim();
 
-      // ★ 강력한 패턴 인식: 작곡가_곡명_BPM_장르 형식
-      // 예: 강동화_DRIVE OFF_ BPM104_POP_R&B
+      // ★ 스마트 패턴 인식: 작곡가와 곡명 지능적 구분
       const parts = cleanName.split('_').map(p => p.trim()).filter(p => p);
 
       if (parts.length >= 2) {
@@ -626,30 +627,38 @@
         let songNameCandidate = '';
         let idx = 0;
 
-        // 첫 번째 파트 분석
         const firstPart = parts[0];
 
-        // 첫 번째가 작곡가인지 판단
-        const isFirstPartComposer =
-          KNOWN_COMPOSERS.has(firstPart) ||  // 알려진 작곡가
-          /^[가-힣]{2,4}$/.test(firstPart) ||  // 한글 2-4자 (한국 작곡가명)
-          /^[A-Z][a-z]+(\s[A-Z][a-z]+)*$/.test(firstPart);  // 영문 이름 형식
+        // ========== 작곡가 판별 규칙 (우선순위 순) ==========
 
-        if (isFirstPartComposer && parts.length >= 2) {
-          // 패턴: 작곡가_곡명_나머지
-          composerCandidate = firstPart;
+        // 규칙 1: 쉼표로 구분된 여러 이름 → 작곡가 리스트
+        // 예: 이국현,이동영,김민규 / SFaceG-Lizlee-Dosi
+        const hasMultipleComposers =
+          /[,\-]/.test(firstPart) && // 쉼표나 하이픈 포함
+          (firstPart.split(/[,\-]/).length >= 2); // 2명 이상
+
+        // 규칙 2: 한글 이름 2-4자 (단일 작곡가)
+        const isSingleKoreanName = /^[가-힣]{2,4}$/.test(firstPart);
+
+        // 규칙 3: 알려진 작곡가
+        const isKnownComposer = KNOWN_COMPOSERS.has(firstPart);
+
+        // 규칙 4: 영문 이름 형식 (단일 작곡가)
+        const isEnglishName = /^[A-Z][a-z]+(\s[A-Z][a-z]+)*$/.test(firstPart);
+
+        // 작곡가로 판단
+        if (hasMultipleComposers || isSingleKoreanName || isKnownComposer || isEnglishName) {
+          composerCandidate = firstPart.replace(/,/g, ', ').replace(/-/g, ', '); // 쉼표/하이픈 정리
           songNameCandidate = parts[1];
           idx = 2;
         } else {
-          // 패턴: 곡명_나머지 (작곡가 없음)
+          // 곡명으로 판단
           songNameCandidate = firstPart;
           idx = 1;
         }
 
         songName = songNameCandidate;
-        if (composerCandidate) {
-          composer = composerCandidate;
-        }
+        composer = composerCandidate;
 
         // 나머지 부분에서 BPM, 장르 추출
         const genreParts = [];
@@ -693,14 +702,12 @@
             continue;
           }
 
-          // 그 외 작곡가로 추가 (BPM이나 숫자가 아닌 경우)
-          if (!/^\d+$/.test(part) && !/@/.test(part)) {
-            if (!composer) {
-              composer = part;
-            } else if (!KNOWN_COMPOSERS.has(composer)) {
-              // 이미 작곡가가 있지만 알려지지 않은 경우, 추가 정보로 결합
-              composer = `${composer}, ${part}`;
-            }
+          // 그 외 작곡가로 추가 (매우 제한적으로만 허용)
+          // 작곡가가 이미 있으면 추가 정보를 저작자에 넣지 않음
+          // 장르나 기타 정보를 저작자로 오인하는 것 방지
+          if (!composer && !/^\d+$/.test(part) && !/@/.test(part) && /^[가-힣A-Za-z\s]+$/.test(part)) {
+            // 작곡가가 없고, 순수 문자열인 경우만 작곡가로 추가
+            composer = part;
           }
         }
 
@@ -1064,18 +1071,42 @@ writers CC, Ron, JJ
           continue;
         }
 
-        // 패턴 0-0: MC_번호_곡명: 저작자 형식 (뮤직컴바인)
-        // 예: MC_03882_Breeze: 138BPM_Bbkey_가이드보컬 AI활용_김도경(DØK)
-        const mcCreditMatch = line.match(/^MC_\d+_([^:]+):\s*(.+)$/i);
+        // 패턴 0-0: MC_번호_곡명 또는 MC_번호_곡명_ver: 작사/작곡/편곡 정보
+        // 예1: MC_03882_Breeze: 138BPM_Bbkey_가이드보컬 AI활용_김도경(DØK)
+        // 예2: MC_03708_Cocococo_Soft ver.
+        //      참여 작가 : 작사: Kyle, Itzel 작곡: Elliot, Itzel 편곡: Kyle, Elliot
+        const mcCreditMatch = line.match(/^MC_\d+_([^:_]+)(?:_[^:]*)?(?::\s*(.+))?$/i);
         if (mcCreditMatch) {
-          const songName = mcCreditMatch[1].trim();
-          const composerInfo = mcCreditMatch[2].trim();
+          const songName = mcCreditMatch[1].trim(); // Breeze, Cocococo
+          let composerInfo = mcCreditMatch[2] || '';
 
-          // 저작자 추출: 한글(영문) 패턴
-          const composerMatches = composerInfo.match(/[가-힣]+\([^)]+\)/g) ||
-                                 composerInfo.match(/[가-힣]{2,4}/g);
-          if (composerMatches) {
-            credits[songName.toLowerCase()] = composerMatches.join(', ');
+          // 다음 줄에 "참여 작가" 정보가 있을 수 있음
+          if (i + 1 < lines.length && /참여 작가|작사|작곡|편곡/i.test(lines[i + 1])) {
+            i++; // 다음 줄로 이동
+            composerInfo = lines[i];
+          }
+
+          if (composerInfo) {
+            // 작사/작곡/편곡에서 모든 작곡가 추출
+            const allComposers = new Set();
+
+            // 작사: Kyle, Itzel / 작곡: Elliot, Itzel / 편곡: Kyle, Elliot 파싱
+            const creditSections = composerInfo.split(/작사|작곡|편곡|lyricist|composer|arranger/i);
+            creditSections.forEach(section => {
+              const names = section.match(/[A-Z][a-z]+|[가-힣]+\([^)]+\)|[가-힣]{2,4}/g);
+              if (names) {
+                names.forEach(name => {
+                  const cleaned = name.replace(/[:：,\s]+$/, '').trim();
+                  if (cleaned && cleaned !== '참여' && cleaned !== '작가') {
+                    allComposers.add(cleaned);
+                  }
+                });
+              }
+            });
+
+            if (allComposers.size > 0) {
+              credits[songName.toLowerCase()] = [...allComposers].join(', ');
+            }
           }
           continue;
         }
@@ -1083,9 +1114,14 @@ writers CC, Ron, JJ
         // 패턴 0: Track Title: 곡명
         const trackTitleMatch = line.match(/^Track Title:\s*(.+)$/i);
         if (trackTitleMatch) {
-          // 이전 곡 저장
+          // 이전 곡 저장 (중복 제거)
           if (currentSong && currentCredits.length > 0) {
-            credits[currentSong.toLowerCase()] = currentCredits.join(', ');
+            const uniqueCredits = [...new Set(
+              currentCredits.flatMap(c =>
+                c.split(/[,/]/).map(name => name.trim())
+              )
+            )];
+            credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
           }
           currentSong = trackTitleMatch[1].trim();
           currentCredits = [];
@@ -1117,9 +1153,14 @@ writers CC, Ron, JJ
         // 패턴 2: "곡명.mp3 | Powered by Box" 형식 (Box에서 복사한 형식)
         const boxMatch = line.match(/^(.+?)\.(mp3|wav|m4a|flac|aiff)\s*\|\s*Powered by Box$/i);
         if (boxMatch) {
-          // 이전 곡 저장
+          // 이전 곡 저장 (중복 제거)
           if (currentSong && currentCredits.length > 0) {
-            credits[currentSong.toLowerCase()] = currentCredits.join(', ');
+            const uniqueCredits = [...new Set(
+              currentCredits.flatMap(c =>
+                c.split(/[,/]/).map(name => name.trim())
+              )
+            )];
+            credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
           }
           currentSong = boxMatch[1].trim();
           currentCredits = [];
@@ -1167,18 +1208,29 @@ writers CC, Ron, JJ
           }
         } else if (!isKoreanCredit && !hasPercentage && !hasPeermusic && line.length > 0 && !/^Composer/i.test(line)) {
           // 새로운 곡명으로 인식 (기존 형식)
-          // 이전 곡 저장
+          // 이전 곡 저장 (중복 제거)
           if (currentSong && currentCredits.length > 0) {
-            credits[currentSong.toLowerCase()] = currentCredits.join(', ');
+            const uniqueCredits = [...new Set(
+              currentCredits.flatMap(c =>
+                c.split(/[,/]/).map(name => name.trim())
+              )
+            )];
+            credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
           }
           currentSong = line;
           currentCredits = [];
         }
       }
 
-      // 마지막 곡 저장
+      // 마지막 곡 저장 (중복 제거)
       if (currentSong && currentCredits.length > 0) {
-        credits[currentSong.toLowerCase()] = currentCredits.join(', ');
+        // 작곡가 이름 중복 제거 (Smob, Mint, Perrie, Smob → Smob, Mint, Perrie)
+        const uniqueCredits = [...new Set(
+          currentCredits.flatMap(c =>
+            c.split(/[,/]/).map(name => name.trim())
+          )
+        )];
+        credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
       }
 
       return credits;
