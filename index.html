@@ -793,6 +793,20 @@
         return { songName, composer, opName, email, genre, bpm };
       }
 
+      // ========== 패턴 0-10-2-2: 한글이름-곡명-BPM숫자-장르 형식 (★ 중요) ==========
+      // 예: 서민기-Ignite-BPM108-NewJackSwing_rhymah@naver.com.mp3
+      // ★★★ 한글 이름은 절대 제목이 아니라 저작자입니다! ★★★
+      const koreanBpmGenrePattern = /^([가-힣]{2,4})\s*-\s*([^-]+)\s*-\s*BPM(\d+)\s*-\s*([A-Za-z\s]+)$/i;
+      const koreanBpmGenreMatch = nameWithoutExt.match(koreanBpmGenrePattern);
+      if (koreanBpmGenreMatch) {
+        composer = koreanBpmGenreMatch[1].trim(); // 서민기
+        songName = koreanBpmGenreMatch[2].trim(); // Ignite
+        bpm = koreanBpmGenreMatch[3]; // 108
+        genre = koreanBpmGenreMatch[4].trim(); // NewJackSwing
+        opName = getOPFromComposer(composer) || getOPFromEmail(email) || folderOP || '';
+        return { songName, composer, opName, email, genre, bpm };
+      }
+
       // ========== 패턴 0-10-3: 작가명 - 곡명 - 장르_이메일 형식 (기본 패턴) ==========
       // 예: 이종준 - I'm You - Band_rykie456@naver.com.mp3
       // 예: 전근화 - Love Song - Pop_demo@example.com.mp3
