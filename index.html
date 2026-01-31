@@ -201,7 +201,7 @@
       'purpl78@hanmail.net': 'KW',  // 김원 작가
       'modern_sound@naver.com': 'Modern Sound',
       'victoria.ree@concord.com': 'CON',
-      'info@wavecandy.com': 'Wavecandy',
+      'info@wavecandy.com': 'WC',
       'emma@cosmos-music.com': 'COS',
       // 추가 국제 퍼블리셔
       'soundgraphics': 'SoundGraphics',
@@ -831,6 +831,18 @@
         composer = simpleComposerSongMatch[1].trim();
         songName = simpleComposerSongMatch[2].trim();
         opName = getOPFromComposer(composer) || getOPFromEmail(email) || folderOP || '';
+        return { songName, composer, opName, email, genre, bpm };
+      }
+
+      // ========== 패턴 0-10-5: 작곡가들 (x, 쉼표 구분) - 곡명 형식 ==========
+      // 예: Hoodie x GXXD KELVIN, Samson - JETSKI.mp3
+      // ★ 작곡가 여러 명 (x나 쉼표로 구분) - 곡명 (대문자)
+      const multiComposerDashPattern = /^([A-Z][A-Za-z0-9\s]+(?:[x,]\s*[A-Z][A-Za-z0-9\s]+)+)\s*-\s*([A-Z][A-Z\s!?.]+)$/;
+      const multiComposerDashMatch = nameWithoutExt.match(multiComposerDashPattern);
+      if (multiComposerDashMatch) {
+        composer = multiComposerDashMatch[1].trim().replace(/\s+x\s+/g, ', '); // x → ,
+        songName = multiComposerDashMatch[2].trim();
+        opName = getOPFromEmail(email) || getOPFromComposer(composer) || folderOP || '';
         return { songName, composer, opName, email, genre, bpm };
       }
 
