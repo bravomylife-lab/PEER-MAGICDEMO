@@ -623,7 +623,8 @@
       // ========== 패턴 0-3: GL Music 형식 ==========
       // 예: 05 - GL Music - Gimmi Gimmi.mp3
       // 예: GL Music - Good Girls.mp3
-      const glMusicPattern = /^(?:\d+\s*-\s*)?GL\s*Music\s*-\s*(.+)$/i;
+      // 예: 07 - GL Music Sweden - Red Zone.mp3
+      const glMusicPattern = /^(?:\d+\s*-\s*)?GL\s*Music(?:\s+[A-Za-z]+)?\s*-\s*(.+)$/i;
       const glMusicMatch = nameWithoutExt.match(glMusicPattern);
       if (glMusicMatch) {
         songName = glMusicMatch[1].trim();
