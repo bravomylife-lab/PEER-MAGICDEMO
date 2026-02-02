@@ -1521,12 +1521,17 @@ writers CC, Ron, JJ
         }
 
         // 패턴 4: "Composer\tJay Made (GL Music) / Camilia (Lifted House)" 형식
-        // 탭으로 구분된 Composer 필드 (GL Music 등 - 저작자 정보)
-        const composerTabMatch = line.match(/^Composer\s+(.+)$/i);
-        if (composerTabMatch && currentSong) {
-          const composerInfo = composerTabMatch[1].trim();
-          // GL Music의 Composer 정보는 저작자 필드에 기입
-          credits[currentSong.toLowerCase()] = composerInfo;
+        // 탭이나 공백으로 구분된 크레딧 필드 (Composer, Writer, Producer, Lyricist, Arranger 등)
+        const creditFieldMatch = line.match(/^(Composer|Writer|Producer|Lyricist|Arranger|Songwriter)\s+(.+)$/i);
+        if (creditFieldMatch && currentSong) {
+          const creditInfo = creditFieldMatch[2].trim();
+          // 기존 크레딧에 추가 (여러 필드가 있을 수 있음)
+          if (!currentCredits.includes(creditInfo)) {
+            currentCredits.push(creditInfo);
+          }
+          // 즉시 저장 (다음 곡이 올 수 있음)
+          const uniqueCredits = [...new Set(currentCredits.map(c => c.trim()).filter(c => c))];
+          credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
           continue;
         }
 
@@ -1774,6 +1779,7 @@ writers CC, Ron, JJ
             normalizedSgOpNames[normalizeSongName(key)] = value;
           }
 
+          const matchResults = { matched: 0, unmatched: [] };
           const updatedSongs = newSongs.map(song => {
             const songNameNormalized = normalizeSongName(song.곡명);
             const matchedCredit = normalizedCredits[songNameNormalized];
@@ -1783,17 +1789,30 @@ writers CC, Ron, JJ
             if (matchedSgOp) updatedSong.OP명 = matchedSgOp;
             if (matchedCredit) {
               updatedSong.저작자 = matchedCredit;
+              matchResults.matched++;
               if (!updatedSong.OP명) {
                 const firstComposer = matchedCredit.split(/[,/]/)[0].trim();
                 const composerOP = getOPFromComposer(firstComposer);
                 if (composerOP) updatedSong.OP명 = composerOP;
               }
+            } else {
+              matchResults.unmatched.push(song.곡명);
             }
             return updatedSong;
           });
 
+          console.log('크레딧 매칭 결과:', matchResults);
+          console.log('정규화된 크레딧 키:', Object.keys(normalizedCredits));
+          console.log('정규화된 곡명:', updatedSongs.map(s => normalizeSongName(s.곡명)));
+
           setSongs(prev => [...prev, ...updatedSongs]);
-          alert(`${updatedSongs.length}곡이 추가되었습니다. (크레딧 적용됨)`);
+
+          let alertMsg = `${updatedSongs.length}곡이 추가되었습니다.\n크레딧 매칭: ${matchResults.matched}곡`;
+          if (matchResults.unmatched.length > 0) {
+            alertMsg += `\n미매칭: ${matchResults.unmatched.slice(0, 3).join(', ')}`;
+            if (matchResults.unmatched.length > 3) alertMsg += ` 외 ${matchResults.unmatched.length - 3}곡`;
+          }
+          alert(alertMsg);
         } else {
           setSongs(prev => [...prev, ...newSongs]);
           alert(`${newSongs.length}곡이 추가되었습니다.`);
@@ -1869,8 +1888,10 @@ writers CC, Ron, JJ
           .replace(/\s*\([^)]*[가제데모demo][^)]*\)/gi, '')
           // 파일 확장자 제거
           .replace(/\.(mp3|wav|m4a|flac|aiff)$/i, '')
-          // 특수문자 정규화 (하이픈/대시 통일)
-          .replace(/[–—]/g, '-')
+          // 특수문자 정규화 (하이픈/대시/언더스코어 통일)
+          .replace(/[–—_]/g, '-')
+          // 연속된 하이픈 정리
+          .replace(/-+/g, '-')
           // 공백 정리
           .replace(/\s+/g, ' ')
           .trim();
