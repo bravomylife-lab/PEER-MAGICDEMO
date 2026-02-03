@@ -216,6 +216,8 @@
       'sae170@naver.com': 'BSR',
       'eogh8282@naver.com': 'JDH',
       'mbarocci@peermusic.com': 'PM.ITALY',
+      'dyeguitar@hanmail.net': 'LDW',
+      'jongmuyng@nate.com': 'ZOMAY',
     };
 
     // 이메일 → 저작자 매핑 (자동 저작자 입력용)
@@ -227,6 +229,8 @@
       'jaadde@naver.com': 'JADE',
       'sae170@naver.com': '배새롬',
       'eogh8282@naver.com': '진대호',
+      'dyeguitar@hanmail.net': '이동우',
+      'jongmuyng@nate.com': 'ZOMAY, MIND182, MAYFLY',
     };
 
     // 작가명 → OP명 매핑 (확장됨)
@@ -1392,6 +1396,7 @@ writers CC, Ron, JJ
 
       let currentSong = null;
       let currentCredits = [];
+      let creditSaved = false; // 현재 곡의 크레딧이 이미 저장되었는지 추적
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
@@ -1451,12 +1456,13 @@ writers CC, Ron, JJ
         const trackTitleMatch = line.match(/^Track Title:\s*(.+)$/i);
         if (trackTitleMatch) {
           // 이전 곡 저장 (줄 단위 저장 - 저작자 이름 보존)
-          if (currentSong && currentCredits.length > 0) {
+          if (currentSong && currentCredits.length > 0 && !creditSaved) {
             const uniqueCredits = [...new Set(currentCredits.map(c => c.trim()).filter(c => c))];
             credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
           }
           currentSong = trackTitleMatch[1].trim();
           currentCredits = [];
+          creditSaved = false;
           continue;
         }
 
@@ -1501,12 +1507,13 @@ writers CC, Ron, JJ
         const boxMatch = line.match(/^(.+?)\.(mp3|wav|m4a|flac|aiff)\s*\|\s*Powered by Box$/i);
         if (boxMatch) {
           // 이전 곡 저장 (줄 단위 저장 - 저작자 이름 보존)
-          if (currentSong && currentCredits.length > 0) {
+          if (currentSong && currentCredits.length > 0 && !creditSaved) {
             const uniqueCredits = [...new Set(currentCredits.map(c => c.trim()).filter(c => c))];
             credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
           }
           currentSong = boxMatch[1].trim();
           currentCredits = [];
+          creditSaved = false;
           continue;
         }
 
@@ -1533,6 +1540,7 @@ writers CC, Ron, JJ
           // 즉시 저장 (다음 곡이 올 수 있음)
           const uniqueCredits = [...new Set(currentCredits.map(c => c.trim()).filter(c => c))];
           credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
+          creditSaved = true; // 저장 완료 플래그
           continue;
         }
 
@@ -1589,7 +1597,8 @@ writers CC, Ron, JJ
                                    (/_/.test(line) && /BPM\d+/i.test(line));
 
           // 이전 곡 저장 (줄 단위 저장 - 저작자 이름 보존)
-          if (currentSong && currentCredits.length > 0) {
+          // creditSaved가 true이면 이미 Composer 패턴에서 저장했으므로 스킵
+          if (currentSong && currentCredits.length > 0 && !creditSaved) {
             const uniqueCredits = [...new Set(currentCredits.map(c => c.trim()).filter(c => c))];
             credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
           }
@@ -1621,15 +1630,18 @@ writers CC, Ron, JJ
             currentSong = line;
             currentCredits = [];
           }
+          creditSaved = false; // 새 곡 시작 시 플래그 리셋
         }
       }
 
       // 마지막 곡 저장 (줄 단위 저장 - 저작자 이름 보존)
-      if (currentSong && currentCredits.length > 0) {
+      // creditSaved가 true이면 이미 저장되었으므로 스킵
+      if (currentSong && currentCredits.length > 0 && !creditSaved) {
         const uniqueCredits = [...new Set(currentCredits.map(c => c.trim()).filter(c => c))];
         credits[currentSong.toLowerCase()] = uniqueCredits.join(', ');
       }
 
+      console.log('parseCreditText 완료 - 저장된 곡:', Object.keys(credits));
       return { credits, sgOpNames };
     };
 
@@ -1769,7 +1781,9 @@ writers CC, Ron, JJ
         // 크레딧이 있으면 바로 적용
         if (creditTextVal.trim()) {
           const { credits, sgOpNames } = parseCreditText(creditTextVal);
-          console.log('파싱된 크레딧:', credits);
+          console.log('=== 크레딧 파싱 시작 ===');
+          console.log('파싱된 크레딧 (원본):', credits);
+          console.log('곡명 개수:', Object.keys(credits).length);
 
           const normalizedCredits = {};
           for (const [key, value] of Object.entries(credits)) {
@@ -1802,9 +1816,20 @@ writers CC, Ron, JJ
             return updatedSong;
           });
 
-          console.log('크레딧 매칭 결과:', matchResults);
+          console.log('=== 크레딧 매칭 결과 ===');
+          console.log('매칭 성공:', matchResults.matched, '/ 전체:', updatedSongs.length);
+          console.log('미매칭 곡명:', matchResults.unmatched);
+          console.log('---');
           console.log('정규화된 크레딧 키:', Object.keys(normalizedCredits));
-          console.log('정규화된 곡명:', updatedSongs.map(s => normalizeSongName(s.곡명)));
+          console.log('정규화된 파일 곡명:', updatedSongs.map(s => normalizeSongName(s.곡명)));
+          console.log('---');
+          console.log('상세 매칭 분석:');
+          updatedSongs.forEach((song, idx) => {
+            const normalized = normalizeSongName(song.곡명);
+            const matched = normalizedCredits[normalized];
+            console.log(`${idx + 1}. "${song.곡명}" → normalize: "${normalized}" → ${matched ? '✓ 매칭됨' : '✗ 미매칭'}`);
+          });
+          console.log('======================');
 
           setSongs(prev => [...prev, ...updatedSongs]);
 
