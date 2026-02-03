@@ -20,7 +20,8 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(python -m http.server:*)",
-      "Bash(copy:*)"
+      "Bash(copy:*)",
+      "Bash(npx:*)"
     ],
     "additionalDirectories": [
       "c:\\Users\\droli\\OneDrive\\문서\\GitHub\\PEER-MAGICDEMO"
