@@ -2120,8 +2120,20 @@ writers CC, Ron, JJ
             };
           })
         };
-        setArchivedSessions(prev => [sessionData, ...prev]);
-        alert(`"${sessionData.아티스트}" 세션 (${sessionData.총곡수}곡) 아카이브 저장 완료!`);
+        setArchivedSessions(prev => {
+          const updated = [sessionData, ...prev];
+          // 저장 후 백업 권장 (5개 세션마다)
+          if (updated.length % 5 === 0) {
+            setTimeout(() => {
+              if (confirm(`✅ "${sessionData.아티스트}" 세션이 저장되었습니다!\n\n⚠️ 현재 ${updated.length}개의 세션이 브라우저에만 저장되어 있습니다.\n데이터 손실 방지를 위해 JSON 백업을 권장합니다.\n\n지금 백업하시겠습니까?`)) {
+                exportArchiveJSON();
+              }
+            }, 100);
+          } else {
+            alert(`✅ "${sessionData.아티스트}" 세션 (${sessionData.총곡수}곡) 저장 완료!\n\n💡 브라우저 로컬 저장소에만 저장됩니다.\n정기적으로 JSON 백업을 권장합니다.`);
+          }
+          return updated;
+        });
       };
 
       // JSON 내보내기 (전체 아카이브 백업)
@@ -2609,6 +2621,32 @@ C:\\Users\\demo\\Wavecandy\\JETSKI.mp3`} />
 
         return (
           <div className="max-w-6xl mx-auto p-4 md:p-6 fade-in">
+            {/* 저장 위치 경고 메시지 */}
+            <div className="glass rounded-2xl p-4 mb-4 border-l-4 border-yellow-500">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">⚠️</span>
+                <div className="flex-1">
+                  <h3 className="text-yellow-400 font-bold mb-2">데이터 저장 위치 안내</h3>
+                  <p className="text-sm text-gray-300 mb-2">
+                    아카이브 데이터는 <strong className="text-white">현재 브라우저의 로컬 저장소</strong>에만 저장됩니다.
+                  </p>
+                  <ul className="text-xs text-gray-400 space-y-1 mb-3">
+                    <li>❌ 다른 브라우저(Chrome/Edge/Firefox)에서 접근 불가</li>
+                    <li>❌ 다른 컴퓨터에서 접근 불가</li>
+                    <li>❌ 브라우저 캐시/쿠키 삭제 시 데이터 손실</li>
+                    <li>❌ 시크릿 모드에서는 별도 저장</li>
+                  </ul>
+                  <div className="flex gap-2 flex-wrap">
+                    <button onClick={exportArchiveJSON} disabled={archivedSessions.length === 0}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-40 text-xs font-bold border border-emerald-500/30">
+                      ✅ 정기적으로 JSON 백업하기
+                    </button>
+                    <span className="text-xs text-gray-500 self-center">← 중요한 데이터는 반드시 백업하세요!</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="glass rounded-2xl p-4 mb-4">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -2706,9 +2744,27 @@ C:\\Users\\demo\\Wavecandy\\JETSKI.mp3`} />
               </div>
             )}
 
-            <div className="mt-4 glass rounded-xl p-4 text-center text-sm text-gray-500">
-              총 {archivedSessions.reduce((sum, s) => sum + s.songs.length, 0)}곡 |
-              localStorage 사용량: {(new Blob([JSON.stringify(archivedSessions)]).size / 1024).toFixed(1)}KB / 5,120KB
+            <div className="mt-4 glass rounded-xl p-4">
+              <div className="text-center text-sm text-gray-400 mb-2">
+                <span className="text-white font-semibold">총 {archivedSessions.reduce((sum, s) => sum + s.songs.length, 0)}곡</span> 저장됨
+              </div>
+              <div className="flex items-center justify-center gap-2 text-xs">
+                <span className="text-gray-500">
+                  현재 브라우저({navigator.userAgent.includes('Chrome') ? 'Chrome' : navigator.userAgent.includes('Firefox') ? 'Firefox' : navigator.userAgent.includes('Edge') ? 'Edge' : '브라우저'}) 저장소 사용량:
+                </span>
+                <span className={`font-mono font-bold ${
+                  (new Blob([JSON.stringify(archivedSessions)]).size / 1024) > 4000 ? 'text-red-400' :
+                  (new Blob([JSON.stringify(archivedSessions)]).size / 1024) > 3000 ? 'text-yellow-400' : 'text-emerald-400'
+                }`}>
+                  {(new Blob([JSON.stringify(archivedSessions)]).size / 1024).toFixed(1)}KB
+                </span>
+                <span className="text-gray-600">/ 5,120KB</span>
+              </div>
+              {(new Blob([JSON.stringify(archivedSessions)]).size / 1024) > 3000 && (
+                <div className="mt-2 text-center text-xs text-yellow-400">
+                  ⚠️ 저장 공간이 부족합니다. JSON 백업 후 오래된 세션을 삭제하세요.
+                </div>
+              )}
             </div>
           </div>
         );
